@@ -1,11 +1,11 @@
 """
-Convolutional VAE for 256x256 grayscale OASIS brain MRI slices.
+Convolutional VAE for 128x128 grayscale OASIS brain MRI slices.
 
-latent_dim defaults to 2 so we can directly visualise the manifold as a
-2D grid (per the brief: "2D sampling grid or UMAP/dim-reduction").
-A 2-D bottleneck is aggressive for 256x256 images, so reconstructions
-will be blurry — that's expected and fine for this task; the point is
-the manifold structure, not photorealistic reconstruction.
+latent_dim=2 so we can directly visualise the manifold as a 2D grid
+(per the brief: "2D sampling grid or UMAP/dim-reduction"). A 2-D
+bottleneck is aggressive, so reconstructions will be a bit blurry --
+that's expected and fine here; the point is the manifold structure,
+not photorealistic reconstruction.
 """
 
 import torch
@@ -17,17 +17,15 @@ class VAE(nn.Module):
         super().__init__()
         self.latent_dim = latent_dim
 
-        # Encoder: 256 -> 128 -> 64 -> 32 -> 16 -> 8
+        # Encoder: 128 -> 64 -> 32 -> 16 -> 8
         self.encoder = nn.Sequential(
-            nn.Conv2d(img_channels, 32, 4, stride=2, padding=1),  # 128
+            nn.Conv2d(img_channels, 32, 4, stride=2, padding=1),  # 64
             nn.ReLU(),
-            nn.Conv2d(32, 64, 4, stride=2, padding=1),            # 64
+            nn.Conv2d(32, 64, 4, stride=2, padding=1),            # 32
             nn.ReLU(),
-            nn.Conv2d(64, 128, 4, stride=2, padding=1),           # 32
+            nn.Conv2d(64, 128, 4, stride=2, padding=1),           # 16
             nn.ReLU(),
-            nn.Conv2d(128, 256, 4, stride=2, padding=1),          # 16
-            nn.ReLU(),
-            nn.Conv2d(256, 256, 4, stride=2, padding=1),          # 8
+            nn.Conv2d(128, 256, 4, stride=2, padding=1),          # 8
             nn.ReLU(),
         )
         self.flatten_dim = 256 * 8 * 8
@@ -38,15 +36,13 @@ class VAE(nn.Module):
         # Decoder: mirror of encoder
         self.decoder_input = nn.Linear(latent_dim, self.flatten_dim)
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(256, 256, 4, stride=2, padding=1),  # 16
+            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1),  # 16
             nn.ReLU(),
-            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1),  # 32
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),   # 32
             nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),   # 64
+            nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1),    # 64
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1),    # 128
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, img_channels, 4, stride=2, padding=1),  # 256
+            nn.ConvTranspose2d(32, img_channels, 4, stride=2, padding=1),  # 128
             nn.Sigmoid(),  # output in [0, 1] to match ToTensor() input range
         )
 
@@ -72,16 +68,15 @@ class VAE(nn.Module):
         return recon, mu, logvar
 
 
-def vae_loss(recon_x, x, mu, logvar, beta=1.0):
+def vae_loss(recon_x, x, mu, logvar):
     """
-    Reconstruction loss (BCE, since output is sigmoid in [0,1]) + KL divergence.
-    beta: weight on KL term (beta-VAE style). beta=1.0 is the standard VAE.
-    Returns total loss, recon loss, KL loss (all summed over batch, not averaged,
-    so you can divide by batch size yourself for logging).
+    Standard VAE loss = reconstruction loss (BCE) + KL divergence.
+    Returns total loss, recon loss, KL loss (all summed over the batch,
+    not averaged -- divide by batch size yourself for logging).
     """
     recon_loss = nn.functional.binary_cross_entropy(
         recon_x, x, reduction="sum"
     )
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    total = recon_loss + beta * kl_loss
+    total = recon_loss + kl_loss
     return total, recon_loss, kl_loss

@@ -20,7 +20,7 @@ def train(args):
     print(f"Using device: {device}")
 
     train_loader, val_loader, _ = get_oasis_dataloaders(
-        args.data_root, batch_size=args.batch_size, num_workers=4
+        args.data_root, batch_size=args.batch_size, num_workers=4, image_size=args.image_size
     )
 
     model = VAE(latent_dim=args.latent_dim).to(device)
@@ -39,7 +39,7 @@ def train(args):
             batch = batch.to(device)
             optimizer.zero_grad()
             recon, mu, logvar = model(batch)
-            loss, recon_loss, kl_loss = vae_loss(recon, batch, mu, logvar, beta=args.beta)
+            loss, recon_loss, kl_loss = vae_loss(recon, batch, mu, logvar)
             loss.backward()
             optimizer.step()
 
@@ -57,7 +57,7 @@ def train(args):
             for batch in val_loader:
                 batch = batch.to(device)
                 recon, mu, logvar = model(batch)
-                loss, _, _ = vae_loss(recon, batch, mu, logvar, beta=args.beta)
+                loss, _, _ = vae_loss(recon, batch, mu, logvar)
                 val_running += loss.item()
                 val_n += batch.size(0)
         avg_val_loss = val_running / val_n
@@ -67,13 +67,8 @@ def train(args):
         print(f"Epoch {epoch}/{args.epochs} | train_loss/sample: {avg_train_loss:.2f} "
               f"| val_loss/sample: {avg_val_loss:.2f} | time: {dt:.1f}s")
 
-        # Save checkpoint each epoch (cheap insurance against job timeouts)
-        torch.save({
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "latent_dim": args.latent_dim,
-        }, os.path.join(args.out_dir, "vae_checkpoint.pt"))
+    # Save final model weights only (simple, no optimizer state / epoch bookkeeping)
+    torch.save(model.state_dict(), os.path.join(args.out_dir, "vae_checkpoint.pt"))
 
     # Save loss curve
     plt.figure()
@@ -96,7 +91,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--latent_dim", type=int, default=2)
-    parser.add_argument("--beta", type=float, default=1.0)
+    parser.add_argument("--image_size", type=int, default=128)
     args = parser.parse_args()
 
     train(args)

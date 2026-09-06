@@ -2,9 +2,9 @@
 Visualise the VAE's 2D latent manifold as a grid of decoded images.
 Only meaningful when latent_dim=2 (default in vae_model.py).
 
-Also plots the encoded test set in latent space, coloured by nothing in
-particular (OASIS has no class labels here) but useful to show the
-distribution is roughly a standard normal, confirming the KL term worked.
+Also plots the encoded test set in latent space -- OASIS has no class
+labels, but this confirms the encoded points roughly fill a standard
+normal shape, which shows the KL term worked as intended.
 """
 
 import os
@@ -14,20 +14,15 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from scipy.stats import norm
 
 from dataset import get_oasis_dataloaders
 from vae_model import VAE
 
 
-def plot_manifold_grid(model, device, out_path, n=15, digit_size=256, span=3.0):
-    """
-    Decode an n x n grid of points sampled across the latent space
-    (using inverse-CDF spacing so the grid covers equal probability mass,
-    same trick as the classic Keras VAE manifold example).
-    """
-    grid_x = norm.ppf(np.linspace(0.01, 0.99, n))
-    grid_y = norm.ppf(np.linspace(0.01, 0.99, n))
+def plot_manifold_grid(model, device, out_path, n=15, digit_size=128, span=3.0):
+    """Decode an n x n grid of points swept evenly across the latent space."""
+    grid_x = np.linspace(-span, span, n)
+    grid_y = np.linspace(-span, span, n)[::-1]
 
     figure = np.zeros((digit_size * n, digit_size * n))
 
@@ -75,22 +70,18 @@ if __name__ == "__main__":
     parser.add_argument("--data_root", type=str, default="/home/groups/comp3710/OASIS")
     parser.add_argument("--checkpoint", type=str, default="./vae_out/vae_checkpoint.pt")
     parser.add_argument("--out_dir", type=str, default="./vae_out")
+    parser.add_argument("--latent_dim", type=int, default=2)
+    parser.add_argument("--image_size", type=int, default=128)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt = torch.load(args.checkpoint, map_location=device)
 
-    model = VAE(latent_dim=ckpt["latent_dim"]).to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
-
-    if ckpt["latent_dim"] != 2:
-        raise ValueError(
-            f"Manifold grid visualisation needs latent_dim=2, checkpoint has "
-            f"{ckpt['latent_dim']}. Use UMAP/t-SNE instead for higher dims."
-        )
+    model = VAE(latent_dim=args.latent_dim).to(device)
+    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
     os.makedirs(args.out_dir, exist_ok=True)
-    plot_manifold_grid(model, device, os.path.join(args.out_dir, "manifold_grid.png"))
+    plot_manifold_grid(model, device, os.path.join(args.out_dir, "manifold_grid.png"),
+                        digit_size=args.image_size)
 
-    _, _, test_loader = get_oasis_dataloaders(args.data_root, batch_size=64)
+    _, _, test_loader = get_oasis_dataloaders(args.data_root, batch_size=64, image_size=args.image_size)
     plot_latent_scatter(model, test_loader, device, os.path.join(args.out_dir, "latent_scatter.png"))
